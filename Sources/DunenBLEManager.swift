@@ -1061,6 +1061,13 @@ final class DunenBLEManager: NSObject, ObservableObject {
                 let vechRPMRaw = iq16At(12)
                 let vechRPM = abs(vechRPMRaw)
                 if vechRPM < 20000 {
+                    // This OEM firmware does not send the optional 0x0400
+                    // live frame. OVechSpd is the same motor-RPM signal and
+                    // is therefore the authoritative RPM fallback.
+                    if liveFrameCount == 0 {
+                        telemetry.rpm = vechRPM >= 3.0 ? Int(vechRPM.rounded()) : 0
+                        telemetry.wheelRPM = telemetry.rpm > 0 ? Double(telemetry.rpm) / finalDriveRatio : 0
+                    }
                     let kmh = vechRPM >= 3.0 ? (vechRPM * kmhPerMotorRPM * 10.0).rounded() / 10.0 : 0.0
                     telemetry.speedKmh = kmh
                     appLogger.log("DECODE-D", "OVechSpd raw=\(String(format:"%.4f",vechRPMRaw)) RPM → \(String(format:"%.1f",kmh))km/h (ratio=\(String(format:"%.5f",kmhPerMotorRPM)))")
