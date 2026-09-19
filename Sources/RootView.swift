@@ -6,6 +6,7 @@ struct RootView: View {
 
     @State private var selectedTab: AppTab = .dashboard
     @State private var showSplash = true
+    @State private var landscapeChromeVisible = false
 
     var showConnection: Bool {
         !ble.isConnected && !ble.isDemoMode && !ble.isOfflineMode && !showSplash
@@ -13,38 +14,45 @@ struct RootView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-            ZStack(alignment: .top) {
-                AppBackground()
+            GeometryReader { geometry in
+                let isLandscape = geometry.size.width > geometry.size.height
+                ZStack(alignment: .top) {
+                    AppBackground()
 
-                if showConnection {
-                    ConnectionHomeView()
-                } else {
-                    VStack(spacing: 0) {
-                        Group {
-                            switch selectedTab {
-                            case .dashboard:
-                                DashboardView()
-                            case .ride:
-                                RideMapView()
-                            case .advanced:
-                                AdvancedInfoView()
-                            case .tuning:
-                                TuningView()
-                            case .diagnostics:
-                                DiagnosticsView()
-                            case .settings:
-                                SettingsView()
+                    if showConnection {
+                        ConnectionHomeView()
+                    } else {
+                        VStack(spacing: 0) {
+                            Group {
+                                switch selectedTab {
+                                case .dashboard:
+                                    DashboardView(selectedTab: $selectedTab)
+                                case .ride:
+                                    RideMapView()
+                                case .advanced:
+                                    AdvancedInfoView()
+                                case .tuning:
+                                    TuningView()
+                                case .diagnostics:
+                                    DiagnosticsView()
+                                case .settings:
+                                    SettingsView()
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                            // In landscape the map owns the screen: hide the
+                            // bottom menu and expose it through a small
+                            // floating button instead.
+                            if !isLandscape || landscapeChromeVisible {
+                                LiquidTabBar(selectedTab: $selectedTab)
+                                    .padding(.horizontal, 10)
+                                    .padding(.bottom, 8)
+                                    .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                        LiquidTabBar(selectedTab: $selectedTab)
-                            .padding(.horizontal, 10)
-                            .padding(.bottom, 8)
                     }
-                }
-
-                if ble.isDemoMode && settings.developerUnlocked {
+                    if ble.isDemoMode && settings.developerUnlocked {
                     DemoDeveloperOverlay()
                         .zIndex(8)
                 }
@@ -61,6 +69,7 @@ struct RootView: View {
                     StartupSplash()
                         .transition(.opacity)
                         .zIndex(10)
+                }
                 }
             }
             .animation(.easeInOut(duration: 0.35), value: ble.isInitializing)

@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject var ble: DunenBLEManager
     @EnvironmentObject var settings: AppSettings
+    @Binding var selectedTab: AppTab
     @State private var fullscreen = false
 
     var odo: String {
@@ -12,7 +13,7 @@ struct DashboardView: View {
     var body: some View {
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
-                LandscapeRideDashboard(fullscreenButton: { fullscreen = true })
+                LandscapeRideDashboard(selectedTab: $selectedTab, fullscreenButton: { fullscreen = true })
             } else {
                 ScrollView {
                     VStack(spacing: 14) {
@@ -81,31 +82,44 @@ struct DashboardView: View {
 struct LandscapeRideDashboard: View {
     @EnvironmentObject var ble: DunenBLEManager
     @EnvironmentObject var gps: GPSSpeedManager
+    @EnvironmentObject var settings: AppSettings
+    @Binding var selectedTab: AppTab
+    @State private var chromeVisible = false
     var fullscreenButton: (() -> Void)?
 
     private var hasDriveData: Bool { ble.isDemoMode || ble.liveFrameCount > 0 }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack(alignment: .bottomLeading) {
-                OSMMapView(
-                    currentLocation: gps.currentLocation,
-                    track: gps.trackCoordinates,
-                    followUser: gps.isRecordingRide
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 22))
+    private var speedValue: Double {
+        settings.speedUnit == .kmh ? ble.telemetry.speedKmh : ble.telemetry.speedKmh * 0.621371
+    }
+    private var speedText: String {
+        ble.telemetry.mode == .park ? "P" : "\(Int(speedValue.rounded()))"
+    }
+    private var modeColor: Color {
+        switch ble.telemetry.mode {
+        case .eco: return .green
+        case .xc: return .cyan
+        case .sports: return .orange
+        case .reverse: return .purple
+        case .park: return .white
+        }
+    }
 
+    var body: some View {
+        ZStack {
+            // Map owns the whole landscape screen, edge to edge.
+            OSMMapView(
+                currentLocation: gps.currentLocation,
+                track: gps.trackCoordinates,
+                followUser: true
+            )
+            .ignoresSafeArea()
+            .onAppear { gps.start() }
+
+            // OSM attribution, bottom-left.
+            VStack {
+                Spacer()
                 HStack {
-                    if gps.isRecordingRide {
-                        Label("REC · \(String(format: "%.2f km", gps.recordedDistanceKm))", systemImage: "record.circle.fill")
-                            .font(.caption2.weight(.heavy))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                    }
-                    Spacer()
                     Link(destination: URL(string: "https://www.openstreetmap.org/copyright")!) {
                         Text("© OpenStreetMap")
                             .font(.system(size: 8, weight: .semibold))
@@ -115,96 +129,186 @@ struct LandscapeRideDashboard: View {
                             .background(.black.opacity(0.55))
                             .clipShape(Capsule())
                     }
+                    Spacer()
                 }
-                .padding(10)
+                .padding(.leading, 12)
+                .padding(.bottom, 8)
             }
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.cyan.opacity(0.22)))
-            .shadow(color: .cyan.opacity(0.08), radius: 12)
-            .frame(maxWidth: .infinity)
 
-            VStack(spacing: 10) {
-                GlassCard {
+            // Right-hand data column floating over the map.
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    // Speed tile + selected mode tile, side by side.
+                    HStack(spacing: 8) {
+                        VStack(spacing: 0) {
+                            Text(speedText)
+                                .font(.system(size: 44, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(ble.telemetry.mode == .sports ? .orange : .white)
+                            Text(ble.telemetry.mode == .park ? "PARK" : settings.speedUnit.rawValue)
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(1.6)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                        VStack(spacing: 4) {
+                            ModeBadge(mode: ble.telemetry.mode)
+                            Text(connectionText)
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    }
+
+                    HStack(spacing: 8) {
+                        overlayMetric(value: hasDriveData ? String(format: "%.1f", ble.telemetry.powerKw) : "—", unit: "kW", label: "POWER")
+                        overlayMetric(value: hasDriveData ? String(format: "%.0f", ble.telemetry.currentA) : "—", unit: "A", label: "CURRENT")
+                        overlayMetric(value: String(format: "%.0f%%", ble.telemetry.batteryPercent), unit: "", label: "BATTERY")
+                    }
+
+                    HStack(spacing: 8) {
+                        overlayStatus(icon: "cpu", value: temperature(ble.telemetry.controllerTemp))
+                        overlayStatus(icon: "gearshape.2", value: temperature(ble.telemetry.motorTemp))
+                        overlayStatus(icon: "arrow.triangle.2.circlepath", value: ble.telemetry.regenLevel > 0 ? "L\(ble.telemetry.regenLevel)" : "AUTO")
+                        if ble.telemetry.brakeActive {
+                            Text("BRAKE")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+                .frame(width: 300)
+                .padding(.trailing, 10)
+                .padding(.vertical, 8)
+            }
+
+            // Recording badge, top-left.
+            if gps.isRecordingRide {
+                VStack {
                     HStack {
-                        ModeBadge(mode: ble.telemetry.mode)
+                        Label("REC · \(String(format: "%.2f km", gps.recordedDistanceKm))", systemImage: "record.circle.fill")
+                            .font(.caption2.weight(.heavy))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .padding(.leading, 12)
+                            .padding(.top, 8)
                         Spacer()
-                        Circle()
-                            .fill(ble.isConnected ? Color.green : (ble.isDemoMode ? .orange : .secondary))
-                            .frame(width: 7, height: 7)
-                        Text(ble.isConnected ? "LIVE" : (ble.isDemoMode ? "DEMO" : "OFFLINE"))
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
                     }
-                }
-
-                HStack(spacing: 10) {
-                    landscapeMetric(
-                        value: hasDriveData ? String(format: "%.1f", ble.telemetry.powerKw) : "—",
-                        unit: "kW", label: "POWER", icon: "bolt.fill"
-                    )
-                    landscapeMetric(
-                        value: hasDriveData ? String(format: "%.0f", ble.telemetry.currentA) : "—",
-                        unit: "A", label: "MOTOR CURRENT", icon: "waveform.path.ecg"
-                    )
-                }
-
-                GlassCard {
-                    VStack(spacing: 8) {
-                        HStack {
-                            Label(String(format: "%.0f%%", ble.telemetry.batteryPercent), systemImage: "battery.75percent")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.green)
-                            Spacer()
-                            Text(String(format: "%.1f V", ble.telemetry.voltage))
-                                .font(.headline.monospacedDigit())
-                        }
-                        Divider().opacity(0.25)
-                        HStack {
-                            status("CTRL", temperature(ble.telemetry.controllerTemp), "cpu")
-                            Spacer()
-                            status("MOTOR", temperature(ble.telemetry.motorTemp), "gearshape.2")
-                            Spacer()
-                            status("REGEN", ble.telemetry.regenLevel > 0 ? "L\(ble.telemetry.regenLevel)" : "AUTO", "arrow.triangle.2.circlepath")
-                            if let fullscreenButton {
-                                Spacer()
-                                Button(action: fullscreenButton) {
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.cyan)
-                            }
-                        }
-                    }
+                    Spacer()
                 }
             }
-            .frame(maxWidth: .infinity)
+
+            // Small chrome toggle, top-right above the data column.
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() }
+                    } label: {
+                        Image(systemName: chromeVisible ? "xmark" : "line.3.horizontal")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(.black.opacity(0.55))
+                            .clipShape(Circle())
+                    }
+                    .padding(.trailing, 12)
+                    .padding(.top, 8)
+                }
+                Spacer()
+            }
+
+            // Hidden menu + tab switcher overlay.
+            if chromeVisible {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+                    }
+                VStack(spacing: 10) {
+                    Spacer()
+                    if let fullscreenButton {
+                        Button(action: { chromeVisible = false; fullscreenButton() }) {
+                            Label("Fullscreen", systemImage: "arrow.up.left.and.arrow.down.right")
+                                .frame(maxWidth: 220)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.cyan)
+                    }
+                    ForEach(AppTab.allCases, id: \.rawValue) { tab in
+                        Button {
+                            chromeVisible = false
+                            selectedTab = tab
+                        } label: {
+                            Label(tab.rawValue, systemImage: tab.icon)
+                                .frame(maxWidth: 220, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(selectedTab == tab ? .cyan : .gray)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
         .onAppear { gps.start() }
     }
 
-    private func landscapeMetric(value: String, unit: String, label: String, icon: String) -> some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 3) {
-                Image(systemName: icon).foregroundStyle(.cyan)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(value).font(.title.weight(.bold)).monospacedDigit()
-                    Text(unit).font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                }
-                Text(label).font(.system(size: 9, weight: .bold)).tracking(0.6).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+    private var connectionText: String {
+        ble.isConnected ? "LIVE" : (ble.isDemoMode ? "DEMO" : (ble.isOfflineMode ? "SAVED" : "OFFLINE"))
     }
 
-    private func status(_ label: String, _ value: String, _ icon: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon).foregroundStyle(.cyan)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value).font(.caption2.weight(.bold)).monospacedDigit()
-                Text(label).font(.system(size: 7, weight: .bold)).foregroundStyle(.secondary)
+    private func overlayMetric(value: String, unit: String, label: String) -> some View {
+        VStack(spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.headline.weight(.bold))
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.65))
             }
+            Text(label)
+                .font(.system(size: 7, weight: .heavy))
+                .tracking(0.7)
+                .foregroundStyle(.white.opacity(0.6))
         }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func overlayStatus(icon: String, value: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(.cyan)
+            Text(value)
+                .font(.caption2.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
     }
 
     private func temperature(_ value: Double) -> String {
