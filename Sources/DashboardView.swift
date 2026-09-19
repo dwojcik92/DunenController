@@ -90,7 +90,7 @@ struct MetricsCard: View {
                     metric("Odometer", odo)
                 }
                 HStack {
-                    metric("Current", String(format: "%.2f A", ble.telemetry.currentA))
+                    metric("Motor current", ble.liveFrameCount > 0 ? String(format: "%.1f A", ble.telemetry.currentA) : "—")
                     metric("Battery", String(format: "%.0f %%", ble.telemetry.batteryPercent))
                 }
                 HStack {
@@ -125,81 +125,148 @@ struct HUDBlock: View {
         return "\(Int(speedValue.rounded()))"
     }
 
+    private var hasDriveTelemetry: Bool { ble.liveFrameCount > 0 }
+    private var powerText: String {
+        hasDriveTelemetry ? String(format: "%.1f", ble.telemetry.powerKw) : "—"
+    }
+    private var currentText: String {
+        hasDriveTelemetry ? String(format: "%.0f", ble.telemetry.currentA) : "—"
+    }
+
     var body: some View {
         GlassCard(glow: true) {
-            ZStack {
-                Circle()
-                    .fill(modeColor.opacity(0.16 + min(ble.telemetry.speedKmh / 260, 0.22)))
-                    .blur(radius: 52)
-                    .frame(width: compact ? 210 : 260)
-
-                VStack(spacing: compact ? 7 : 10) {
-                    AptumLogoImage()
-                        .frame(width: compact ? 132 : 150, height: compact ? 34 : 40)
-                        .padding(.bottom, -2)
-
-                    ModeBadge(mode: ble.telemetry.mode)
-
-                    if settings.hudShowTemps {
-                        HStack {
-                            statusIcon("cpu", String(format: "%.1f°C", ble.telemetry.controllerTemp))
-                            Spacer()
-                            motorTempIcon(String(format: "%.1f°C", ble.telemetry.motorTemp))
-                            Spacer()
-                            statusIcon("battery.75percent", String(format: "%.0f%%", ble.telemetry.batteryPercent))
-                        }
+            VStack(spacing: compact ? 10 : 14) {
+                // Premium automotive header: drive state left, energy right.
+                HStack(alignment: .center) {
+                    HStack(spacing: 9) {
+                        Circle()
+                            .fill(ble.isConnected ? Color.green : Color.secondary)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: ble.isConnected ? .green : .clear, radius: 5)
+                        ModeBadge(mode: ble.telemetry.mode)
                     }
-
-                    ZStack {
-                        RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode, profile: settings.selectedVehicleModel.profile)
-                            .frame(width: compact ? 205 : 225, height: compact ? 205 : 225)
-
-                        VStack(spacing: 0) {
-                            Text(displaySpeed)
-                                .font(.system(size: ble.telemetry.mode == .park ? (compact ? 92 : 108) : (compact ? 76 : 88), weight: .heavy, design: .rounded))
-                                .foregroundStyle(ble.telemetry.mode == .sports ? .orange : (ble.telemetry.mode == .park ? .white : .primary))
-                            Text(ble.telemetry.mode == .park ? "PARK" : (ble.telemetry.mode == .reverse ? "REVERSE • \(settings.speedUnit.rawValue)" : settings.speedUnit.rawValue))
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "battery.75percent")
+                                .foregroundStyle(batteryColor)
+                            Text(String(format: "%.0f%%", ble.telemetry.batteryPercent))
                                 .font(.headline.weight(.bold))
-                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Text(String(format: "%.1f V", ble.telemetry.voltage))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ZStack {
+                    Circle()
+                        .fill(modeColor.opacity(0.13))
+                        .blur(radius: 48)
+                        .frame(width: compact ? 200 : 245)
+
+                    RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode, profile: settings.selectedVehicleModel.profile)
+                        .frame(width: compact ? 205 : 238, height: compact ? 205 : 238)
+
+                    VStack(spacing: 1) {
+                        Text(displaySpeed)
+                            .font(.system(size: ble.telemetry.mode == .park ? (compact ? 88 : 102) : (compact ? 78 : 94), weight: .semibold, design: .rounded))
+                            .foregroundStyle(ble.telemetry.mode == .sports ? .orange : .primary)
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text(ble.telemetry.mode == .park ? "PARK" : settings.speedUnit.rawValue)
+                            .font(.caption.weight(.bold))
+                            .tracking(2.2)
+                            .foregroundStyle(.secondary)
+                        if ble.telemetry.rpm > 0 {
+                            Text("\(ble.telemetry.rpm) RPM")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(modeColor)
+                                .padding(.top, 3)
                         }
                     }
+                }
+                .frame(height: compact ? 205 : 230)
 
-                    if settings.hudShowKW {
-                        Text(String(format: "%.1f kW", ble.telemetry.powerKw))
-                            .font(.title3.weight(.bold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.22))
-                            .clipShape(Capsule())
+                // The two numbers a rider wants under the speedometer.
+                HStack(spacing: 10) {
+                    driveMetric(value: powerText, unit: "kW", title: "POWER", icon: "bolt.fill")
+                    driveMetric(value: currentText, unit: "A", title: "MOTOR CURRENT", icon: "waveform.path.ecg")
+                }
+
+                HStack(spacing: 8) {
+                    if settings.hudShowTemps {
+                        compactStatus(icon: "cpu", value: temperatureText(ble.telemetry.controllerTemp), label: "CTRL")
+                        compactStatus(icon: "gearshape.2", value: temperatureText(ble.telemetry.motorTemp), label: "MOTOR")
                     }
-
-                    Text(Date.now.formatted(date: .omitted, time: .shortened))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    if settings.hudShowIcons {
-                        HStack {
-                            smallState("light.max.fill", active: ble.telemetry.headlightActive)
-                            smallState("exclamationmark.circle.fill", active: ble.telemetry.warningCode != 0 || ble.telemetry.errorCode != 0)
-                            smallState("parkingsign.circle.fill", active: ble.telemetry.parkingActive)
-                            smallState("arrow.uturn.backward.circle.fill", active: ble.telemetry.reverseActive)
-                            smallState("figure.stand", active: ble.telemetry.kickstandActive)
-                            smallState("brakesignal", active: ble.telemetry.brakeActive)
-                            Spacer()
-                            if let fullscreenButton {
-                                Button {
-                                    fullscreenButton()
-                                } label: {
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.cyan)
-                            }
+                    compactStatus(icon: "arrow.triangle.2.circlepath", value: ble.telemetry.regenLevel > 0 ? "L\(ble.telemetry.regenLevel)" : "AUTO", label: "REGEN")
+                    Spacer(minLength: 4)
+                    if ble.telemetry.brakeActive {
+                        Label("BRAKE", systemImage: "brakesignal")
+                            .font(.caption2.weight(.heavy))
+                            .foregroundStyle(.red)
+                    }
+                    if let fullscreenButton {
+                        Button(action: fullscreenButton) {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
                         }
+                        .buttonStyle(.bordered)
+                        .tint(.cyan)
                     }
                 }
             }
         }
+    }
+
+    private var batteryColor: Color {
+        if ble.telemetry.batteryPercent < 15 { return .red }
+        if ble.telemetry.batteryPercent < 30 { return .orange }
+        return .green
+    }
+
+    private func driveMetric(value: String, unit: String, title: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.headline)
+                .foregroundStyle(.cyan)
+                .frame(width: 28, height: 28)
+                .background(Color.cyan.opacity(0.10))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(value)
+                        .font(.title2.weight(.bold))
+                        .monospacedDigit()
+                    Text(unit)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                Text(title)
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Color.black.opacity(0.20))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08)))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func compactStatus(icon: String, value: String, label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).foregroundStyle(.cyan)
+            Text(value).font(.caption2.weight(.bold)).monospacedDigit()
+            Text(label).font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
+        }
+    }
+
+    private func temperatureText(_ value: Double) -> String {
+        value == 0 ? "—" : String(format: "%.0f°", value)
     }
 
     var modeColor: Color {
