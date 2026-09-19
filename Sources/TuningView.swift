@@ -247,9 +247,9 @@ private struct VehicleModelCard: View {
     @EnvironmentObject var settings: AppSettings
 
     private let models: [(model: VehicleModel, icon: String, kw: String, detail: String)] = [
-        (.standard,  "bolt.circle",      "8 kW",  "8kW / 72V — standard configuration"),
-        (.highPower, "bolt.circle.fill", "10 kW", "10kW / 72V — high power configuration"),
-        (.tse72Pro,  "flame.circle.fill", "15 kW", "15kW peak / 72V40Ah — DEMCC2429 (OFD03)"),
+        (.standard,  "bolt.circle",      "8 kW",  "8 kW · 72 V standard"),
+        (.highPower, "bolt.circle.fill", "10 kW", "10 kW · 72 V high power"),
+        (.tse72Pro,  "flame.circle.fill", "15 kW", "15 kW peak · 72 V · 40 Ah"),
     ]
 
     var body: some View {

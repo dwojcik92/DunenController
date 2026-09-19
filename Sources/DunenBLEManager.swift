@@ -839,7 +839,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
             let udcVoltage = iq16At(2)
             if udcVoltage >= 45 && udcVoltage <= 95 && telemetry.voltage == 0 {
                 telemetry.voltage = (udcVoltage * 100.0).rounded() / 100.0
-                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage, topVoltage: activeProfile.socTopVoltage)
+                telemetry.batteryPercent = socForProfile(telemetry.voltage, profile: activeProfile)
                 telemetry.bmsSoc = telemetry.batteryPercent
                 appLogger.log("DECODE-LIVE", "voltage seed from Udc raw=\(String(format:"%.4f",udcVoltage)) → \(String(format:"%.2f",telemetry.voltage))V (seed only, OVkey takes over)")
             }
@@ -996,7 +996,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
             if vKey >= 45 && vKey <= 95 {
                 let prevV = telemetry.voltage
                 telemetry.voltage = (vKey * 10000.0).rounded() / 10000.0
-                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage, topVoltage: activeProfile.socTopVoltage)
+                telemetry.batteryPercent = socForProfile(telemetry.voltage, profile: activeProfile)
                 telemetry.bmsSoc = telemetry.batteryPercent
                 appLogger.log("DECODE-C", "voltage \(String(format:"%.4f",prevV))→\(String(format:"%.4f",telemetry.voltage))V soc=\(String(format:"%.0f",telemetry.batteryPercent))%")
             } else {
@@ -1366,17 +1366,20 @@ private func reg32s(_ regs: [Int], idx: Int) -> Double {
     return Double(raw)
 }
 
-/// Piecewise linear voltage→SOC for a 20s Li-ion pack (nominal 72V).
-/// AP8F pack charges to ~82V full (confirmed 82V=100%, 79.36V=77%, 74V=48%).
-/// TSE72 Pro pack charges to 84.0V full (4.20V/cell). The curve shape below
-/// 82V is shared; only the top anchor stretches to the profile's fullVoltage.
-/// Full = profile.fullVoltage = 100%, empty = 60V (3.0V×20) = 0%.
-private func liIonSoc20s(_ voltage: Double, topVoltage: Double = 82.0) -> Double {
+/// Profile-aware voltage→SOC for a 20s Li-ion pack (nominal 72V).
+/// Each vehicle profile has its own explicit curve — never stretch anchors.
+private func socForProfile(_ voltage: Double, profile: ControllerProfile = .ap8f) -> Double {
+    profile.id == "tse72pro" ? liIonSoc20sTSE(voltage) : liIonSoc20s(voltage)
+}
+
+/// Voltage→SOC for the AP8F pack (20s Li-ion, charges to ~82V full).
+/// AP8F pack: 82V = 100% (fully charged), 79.36V = 77%, 74V = 48%.
+/// Curve UNCHANGED — calibrated against the real AP8F BMS.
+private func liIonSoc20s(_ voltage: Double) -> Double {
     // (voltage, soc%) breakpoints calibrated to real bike BMS readings.
     // AP8F pack: 82V = 100% (fully charged), 79.36V = 77%, 74V = 48%.
-    // TSE72 Pro pack: same shape, top stretched to 84.0V (4.20V/cell).
-    var curve: [(v: Double, soc: Double)] = [
-        (82.0, 100.0),  // fully charged (AP8F anchor; replaced below if topVoltage > 82)
+    let curve: [(v: Double, soc: Double)] = [
+        (82.0, 100.0),  // fully charged (AP8F)
         (81.7,  98.5),
         (81.4,  97.0),
         (81.1,  95.0),
@@ -1418,15 +1421,57 @@ private func liIonSoc20s(_ voltage: Double, topVoltage: Double = 82.0) -> Double
         (62.0,   1.0),
         (60.0,   0.0),
     ]
-    // Stretch top anchor for packs that charge past 82V (TSE72 Pro → 84.0V).
-    // Keeps the confirmed 79.36V/74V mid-curve identical, only remaps 82V..top.
-    if topVoltage > 82.0 {
-        curve[0] = (topVoltage, 100.0)
-    }
-    if voltage >= curve[0].v { return 100.0 }
-    if voltage <= curve[curve.count - 1].v { return 0.0 }
+    return liIonSocInterpolate(voltage, curve: curve)
+}
+
+/// Voltage→SOC for the TSE72 Pro pack (20s Li-ion, charges to 84.0V full).
+/// Real observed pairs: full after balancing = 84.0V → 100%; bike dashboard
+/// showed 82% while BLE reported ~82.6V → 82%. Those two anchors drive the
+/// top of the curve. Below 82.6V the ladder carries forward the shared 20s
+/// mid/low calibration as provisional points (no separate TSE data yet).
+private func liIonSoc20sTSE(_ voltage: Double) -> Double {
+    // (voltage, soc%) — top anchors observed, mid/low provisional.
+    let curve: [(v: Double, soc: Double)] = [
+        (84.0, 100.0),  // ← observed: full after balancing
+        (83.6,  96.0),
+        (83.2,  92.0),
+        (82.9,  87.0),
+        (82.6,  82.0),  // ← observed: dashboard 82% @ ~82.6V BLE
+        (82.0,  76.5),
+        (81.5,  72.5),
+        (81.0,  69.0),
+        (80.0,  63.0),
+        (79.0,  57.0),
+        (78.0,  51.5),
+        (77.0,  46.5),
+        (76.0,  41.5),
+        (75.0,  37.0),
+        (74.0,  33.0),
+        (73.0,  29.0),
+        (72.0,  25.5),
+        (71.0,  22.0),
+        (70.0,  19.0),
+        (69.0,  16.0),
+        (68.0,  13.0),
+        (67.0,  10.0),
+        (66.0,   7.5),
+        (65.0,   5.5),
+        (63.0,   3.0),
+        (61.0,   1.5),
+        (60.0,   0.0),
+    ]
+    return liIonSocInterpolate(voltage, curve: curve)
+}
+
+/// Monotonic piecewise-linear interpolation over a (voltage → SOC) ladder.
+/// Curve must be sorted descending by voltage with SOC descending too.
+private func liIonSocInterpolate(_ voltage: Double, curve: [(v: Double, soc: Double)]) -> Double {
+    guard let first = curve.first, let last = curve.last else { return 0.0 }
+    if voltage >= first.v { return 100.0 }
+    if voltage <= last.v { return 0.0 }
     for i in 0..<(curve.count - 1) {
         let hi = curve[i], lo = curve[i + 1]
+        guard hi.v > lo.v, hi.soc >= lo.soc else { continue }
         if voltage <= hi.v && voltage >= lo.v {
             let t = (voltage - lo.v) / (hi.v - lo.v)
             return (lo.soc + t * (hi.soc - lo.soc)).rounded()

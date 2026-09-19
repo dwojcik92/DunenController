@@ -56,7 +56,7 @@ struct ControllerProfile: Equatable {
     static let ap8f = ControllerProfile(
         id: "ap8f",
         displayName: "AP8F",
-        detail: "8kW / 72V — DEMCC2416",
+        detail: "8 kW · 72 V",
         controllerTypeString: "DEMCC2416QS035ZFS01",
         alternateTypeString: nil,
         controllerShortName: "DUNEN312",
@@ -83,7 +83,7 @@ struct ControllerProfile: Equatable {
     static let tse72Pro = ControllerProfile(
         id: "tse72pro",
         displayName: "TSE72 Pro",
-        detail: "15kW peak / 72V40Ah — DEMCC2429 (OFD03/TC-OFF-ROAD 03)",
+        detail: "15 kW peak · 72 V · 40 Ah",
         controllerTypeString: "DEMCC2429QS06ZFS01",
         alternateTypeString: "DEMCC2431QS06ZFS01",
         controllerShortName: "DUNEN-C24",

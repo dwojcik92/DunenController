@@ -90,9 +90,9 @@ enum VehicleModel: String, CaseIterable, Identifiable, Codable {
 
     var detail: String {
         switch self {
-        case .standard:  return "8kW / 72V — standard configuration"
-        case .highPower: return "10kW / 72V — high power configuration"
-        case .tse72Pro:  return "15kW peak / 72V40Ah — DEMCC2429 (OFD03)"
+        case .standard:  return "8 kW · 72 V standard"
+        case .highPower: return "10 kW · 72 V high power"
+        case .tse72Pro:  return "15 kW peak · 72 V · 40 Ah"
         }
     }
 
@@ -126,10 +126,10 @@ final class AppSettings: ObservableObject {
     @AppStorage("startupSound") var startupSound: Bool = true
     @AppStorage("hapticsEnabled") var hapticsEnabled: Bool = true
     @AppStorage("focusHUD") var focusHUD: Bool = false
-    @AppStorage("batteryCapacityAh") var batteryCapacityAh: Double = 38.4
+    @AppStorage("batteryCapacityAh") var batteryCapacityAh: Double = 40.0
     @AppStorage("nominalVoltage") var nominalVoltage: Double = 72.0
-    @AppStorage("motorContinuousW") var motorContinuousW: Double = 4000
-    @AppStorage("motorPeakW") var motorPeakW: Double = 8000
+    @AppStorage("motorContinuousW") var motorContinuousW: Double = 6000
+    @AppStorage("motorPeakW") var motorPeakW: Double = 15000
     @AppStorage("hudShowKW") var hudShowKW: Bool = true
     @AppStorage("hudShowTemps") var hudShowTemps: Bool = true
     @AppStorage("hudShowLean") var hudShowLean: Bool = true
@@ -143,7 +143,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("hudShowLeanCard") var hudShowLeanCard: Bool = false
     @AppStorage("hudShowGPSSpeed") var hudShowGPSSpeed: Bool = false
     @AppStorage("demoAutoInput") var demoAutoInput: Bool = true
-    @AppStorage("selectedVehicleModel") var selectedVehicleModelRaw: String = VehicleModel.standard.rawValue
+    @AppStorage("selectedVehicleModel") var selectedVehicleModelRaw: String = VehicleModel.tse72Pro.rawValue
     @AppStorage("lastConnectedDate") var lastConnectedDateRaw: Double = 0
 
     var selectedVehicleModel: VehicleModel {
