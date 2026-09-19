@@ -26,6 +26,7 @@ struct DiagnosticsView: View {
                         row("Connected name", ble.connectedName ?? "None")
                         row("Connection", ble.connectionStatus)
                         row("Packets", "\(ble.telemetry.packetCount)")
+                        row("Live frames (0x0400)", ble.liveFrameCount > 0 ? "\(ble.liveFrameCount)" : (ble.isConnected ? "none — output blocks only (RPM unavailable)" : "—"))
                         row("Update interval", settings.updateInterval.label)
                         row("BLE Service", "FFE0")
                         row("Notify/Read", "FFE1")

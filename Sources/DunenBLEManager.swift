@@ -40,7 +40,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
     private var demoTick: Double = 0
     private var pollFrames: [(start: Int, data: Data)] = []
     private var pollIndex: Int = 0
-    private var pendingReadStarts: [Int] = []
+    private var pendingReads: [(start: Int, count: Int)] = []
     private var outInFlightStart: Int?          // kept for stopPollTimer reset only
     private var outInFlightSentAt: Date?
     private var lastDecodedStart: Int?
@@ -64,6 +64,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
     // Register probe result published to UI
     @Published var probeResult: String = ""
     @Published var probeInFlight: Bool = false
+    /// Count of live 0x0400 frames received this connection. Some OEM
+    /// firmware (e.g. TSE72 Pro DEMCC2429) never sends them — only output
+    /// blocks. When 0, RPM/live current come from nowhere: speed falls back
+    /// to OVechSpd, RPM stays 0. Shown in Diagnostics so it's visible.
+    @Published var liveFrameCount: Int = 0
     private var probeInFlightStart: Int?
 
     private let serviceFFE0 = CBUUID(string: "FFE0")
@@ -237,7 +242,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
                 guard let self, let p else { return }
                 guard let ch = self.writeCharacteristic ?? self.secondaryWriteCharacteristic ?? self.notifyCharacteristic else { return }
                 let wt: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-                self.pendingReadStarts.append(read.start)
+                self.pendingReads.append((start: read.start, count: read.count))
                 self.appLogger.log("TUNING-READ", "addr=\(read.start) count=\(read.count)")
                 p.writeValue(DunenProtocol.modbusReadFrame(start: read.start, count: read.count), for: ch, type: wt)
             }
@@ -294,7 +299,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
     private func startPollTimer() {
         stopPollTimer()
-        pendingReadStarts.removeAll()
+        pendingReads.removeAll()
         outInFlightStart = nil
         outInFlightSentAt = nil
         lastDecodedStart = nil
@@ -305,6 +310,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
         liveEnableTickCount = 0
         pollIndex = 0
         outputPollIdx = 0
+        liveFrameCount = 0
         didReceiveGearData = false
         isInitializing = true
         pollFrames = []
@@ -685,6 +691,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
         // Live frame pushed by controller via notify — just receive and decode it.
         if isDunenLivePrimaryFrame(data) {
             lastLiveNotifyAt = Date()
+            liveFrameCount += 1
             _ = decodeDunenPage(data, expectedStart: 0x0400)
             return
         }
@@ -692,15 +699,30 @@ final class DunenBLEManager: NSObject, ObservableObject {
         guard isModbusRead else { decodeGenericFrame(data); return }
 
         // Tuning read responses — check pending queue first.
-        if !pendingReadStarts.isEmpty {
+        // Validates byteCount against the requested register count: OEM
+        // firmware (e.g. TSE72 Pro DEMCC2429) answers default-table reads
+        // with a different layout instead of the requested registers.
+        // Applying those bytes as tuning values would store garbage/zeros,
+        // so mismatched responses are rejected, not parsed.
+        if !pendingReads.isEmpty {
             let b2 = [UInt8](data)
             let bc = b2.count >= 3 ? Int(b2[2]) : 0
-            if bc > 0, let start = pendingReadStarts.first {
-                pendingReadStarts.removeFirst()
-                appLogger.log("TUNING-RESP", "start=\(start) bc=\(bc) len=\(data.count)")
-                let values = DunenProtocol.parseParameterValues(from: data, expectedStart: start)
-                tuningStore?.applyReadValues(values)
-                return
+            if bc > 0, let pending = pendingReads.first {
+                pendingReads.removeFirst()
+                let expectedBc = pending.count * 2
+                if bc != expectedBc {
+                    appLogger.log("TUNING-RESP", "start=\(pending.start) bc=\(bc) len=\(data.count) MISMATCH expected bc=\(expectedBc) — rejected as tuning, falling through to output-block routing (OEM table, read-only)")
+                    tuningStore?.statusText = "Controller uses OEM table — tuning read-only on this bike (reg \(pending.start) mismatch)"
+                    tuningStore?.isReading = false
+                    // Fall through: the controller often answers with an
+                    // output block (bc 28/44/…) instead of the requested
+                    // registers — still useful telemetry, route it below.
+                } else {
+                    appLogger.log("TUNING-RESP", "start=\(pending.start) bc=\(bc) len=\(data.count)")
+                    let values = DunenProtocol.parseParameterValues(from: data, expectedStart: pending.start)
+                    tuningStore?.applyReadValues(values)
+                    return
+                }
             }
         }
 
