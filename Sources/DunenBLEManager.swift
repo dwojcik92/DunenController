@@ -1128,10 +1128,14 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
     private func checkDiagnosticEvents() {
         if telemetry.warningCode != 0 {
-            addDiagnostic(title: "Warning code \(telemetry.warningCode)", detail: "Controller warning detected.", severity: "warning")
+            let label = FaultCodes.shortLabel(for: telemetry.warningCode)
+            let tip = FaultCodes.fault(for: telemetry.warningCode)?.tip ?? ""
+            addDiagnostic(title: "Warning \(label)", detail: tip.isEmpty ? "Controller warning detected." : tip, severity: "warning")
         }
         if telemetry.errorCode != 0 {
-            addDiagnostic(title: "Error code \(telemetry.errorCode)", detail: "Controller error detected.", severity: "error")
+            let label = FaultCodes.shortLabel(for: telemetry.errorCode)
+            let tip = FaultCodes.fault(for: telemetry.errorCode)?.tip ?? ""
+            addDiagnostic(title: "Error \(label)", detail: tip.isEmpty ? "Controller error detected." : tip, severity: "error")
         }
         if telemetry.controllerTemp > 75 {
             addDiagnostic(title: "Controller hot", detail: String(format: "%.0f °C", telemetry.controllerTemp), severity: "warning")

@@ -608,9 +608,14 @@ struct MiniDiagnosticsCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Mini Diagnostics").font(.headline)
                 HStack {
-                    stat("Warn", "\(ble.telemetry.warningCode)")
-                    stat("Err", "\(ble.telemetry.errorCode)")
+                    stat("Warn", FaultCodes.shortLabel(for: ble.telemetry.warningCode))
+                    stat("Err", FaultCodes.shortLabel(for: ble.telemetry.errorCode))
                     stat("Packets", "\(ble.telemetry.packetCount)")
+                }
+                if let tip = FaultCodes.fault(for: ble.telemetry.errorCode)?.tip, ble.telemetry.errorCode != 0 {
+                    Text(tip).font(.caption2).foregroundStyle(.secondary)
+                } else if let tip = FaultCodes.fault(for: ble.telemetry.warningCode)?.tip, ble.telemetry.warningCode != 0 {
+                    Text(tip).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -619,7 +624,7 @@ struct MiniDiagnosticsCard: View {
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(spacing: 4) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.caption.weight(.bold))
+            Text(value).font(.caption.weight(.bold)).lineLimit(2).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
     }

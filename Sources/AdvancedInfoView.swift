@@ -36,8 +36,8 @@ struct AdvancedInfoView: View {
                         row("Voltage", String(format: "%.4f V", ble.telemetry.voltage))
                         row("Current (Imag)", String(format: "%.2f A", ble.telemetry.currentA))
                         row("Power", ble.telemetry.powerKw > 0 ? String(format: "%.1f kW", ble.telemetry.powerKw) : "—")
-                        row("WarningCode", "\(ble.telemetry.warningCode)")
-                        row("ErrCode", "\(ble.telemetry.errorCode)")
+                        row("WarningCode", FaultCodes.shortLabel(for: ble.telemetry.warningCode))
+                        row("ErrCode", FaultCodes.shortLabel(for: ble.telemetry.errorCode))
                     }
                 }
 
@@ -90,6 +90,44 @@ struct AdvancedInfoView: View {
                         row("Drive", "Chain")
                         Text("Wheel torque and top speed are estimates from speed/RPM and assumed gearing.")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("CAN Bus Reference")
+                            .font(.headline)
+                        Text(CANReference.bitrate)
+                            .font(.caption)
+                            .foregroundStyle(.cyan)
+                        ForEach(CANReference.frames, id: \.id) { f in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(f.id) · \(f.kind) · \(f.rate)")
+                                    .font(.caption2.weight(.bold))
+                                Text(f.meaning)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(f.status)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.cyan)
+                            }
+                            Divider().opacity(0.4)
+                        }
+                        Text("Battery connector (2 power + 5 signal)")
+                            .font(.caption.weight(.bold))
+                            .padding(.top, 4)
+                        ForEach(CANReference.batteryPins, id: \.pin) { p in
+                            Text("Pin \(p.pin): \(p.role) [\(p.status)]")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(CANReference.keyWakeNote)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                        Text("Info only — the app talks to the controller over BLE, not CAN.")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
