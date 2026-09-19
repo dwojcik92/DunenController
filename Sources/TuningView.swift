@@ -249,6 +249,7 @@ private struct VehicleModelCard: View {
     private let models: [(model: VehicleModel, icon: String, kw: String, detail: String)] = [
         (.standard,  "bolt.circle",      "8 kW",  "8kW / 72V — standard configuration"),
         (.highPower, "bolt.circle.fill", "10 kW", "10kW / 72V — high power configuration"),
+        (.tse72Pro,  "flame.circle.fill", "15 kW", "15kW peak / 72V40Ah — DEMCC2429 (OFD03)"),
     ]
 
     var body: some View {
@@ -271,6 +272,11 @@ private struct VehicleModelCard: View {
                         Button {
                             // Visual only — just save to app settings, never writes to controller
                             settings.selectedVehicleModel = item.model
+                            let p = item.model.profile
+                            settings.batteryCapacityAh = p.batteryAh
+                            settings.nominalVoltage = p.nominalVoltage
+                            settings.motorContinuousW = p.motorContinuousW
+                            settings.motorPeakW = p.motorPeakW
                         } label: {
                             VStack(spacing: 8) {
                                 Image(systemName: item.icon)

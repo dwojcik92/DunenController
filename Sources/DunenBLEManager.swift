@@ -73,17 +73,29 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
     // DUNEN controller TYPE shown by the official app.
     // Used for cloud/default/read attempts and for logs.
+    // Legacy AP8F default; active value comes from selected vehicle profile.
     private let dunenControllerTypeString = "DEMCC2416QS035ZFS01"
+    private var activeControllerTypeString: String {
+        settings?.selectedVehicleModel.profile.controllerTypeString ?? dunenControllerTypeString
+    }
+    private var activeProfile: ControllerProfile {
+        settings?.selectedVehicleModel.profile ?? .ap8f
+    }
     private var lastRawDisplaySpeed: Double = 0
     private var lastRawMotorCount: Int = 0
 
-    // AP8F gearing from user: 48T rear, 15T front, 18 inch rear wheel.
+    // AP8F gearing default (15T/48T/18"); active values come from profile.
+    // TSE72 Pro measured: 14T front / 48T rear / 18" rear.
     private let frontSprocketTeeth: Double = 15.0
     private let rearSprocketTeeth: Double = 48.0
     private let rearWheelDiameterInches: Double = 18.0
-    private var finalDriveRatio: Double { rearSprocketTeeth / frontSprocketTeeth }
-    private var rearWheelCircumferenceM: Double { Double.pi * rearWheelDiameterInches * 0.0254 }
-    private var kmhPerMotorRPM: Double { rearWheelCircumferenceM * 60.0 / 1000.0 / finalDriveRatio }
+    private var finalDriveRatio: Double {
+        activeProfile.finalDriveRatio
+    }
+    private var rearWheelCircumferenceM: Double {
+        activeProfile.rearWheelCircumferenceM
+    }
+    private var kmhPerMotorRPM: Double { activeProfile.kmhPerMotorRPM }
     private var motorRPMPerKmh: Double { kmhPerMotorRPM > 0 ? 1.0 / kmhPerMotorRPM : 0.0 }
 
     override init() {
@@ -114,7 +126,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
         appLogger.log("APP", "Demo mode set to \(enabled)")
         if enabled {
             isConnected = false
-            connectedName = "Demo AP8F"
+            let demoProfile = activeProfile
+            connectedName = "Demo \(demoProfile.displayName)"
+            telemetry.productModel = demoProfile.controllerTypeString
+            telemetry.controllerName = demoProfile.controllerShortName
+            telemetry.theoreticalTopSpeedKmh = demoProfile.theoreticalTopSpeedKmh
             connectionStatus = "Demo Mode"
             startDemoTimer()
         } else {
@@ -332,11 +348,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
         // The official DUNEN app asks for TYPE before some default/read operations.
         // We send it as plain ASCII and also log it, then do harmless read probes.
-        let typeData = Data(dunenControllerTypeString.utf8)
+        let typeData = Data(activeControllerTypeString.utf8)
         let writeType: CBCharacteristicWriteType = c.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            self.appLogger.logPacket("TX", characteristic: c, data: typeData, note: "DUNEN TYPE \(self.dunenControllerTypeString)")
+            self.appLogger.logPacket("TX", characteristic: c, data: typeData, note: "DUNEN TYPE \(self.activeControllerTypeString)")
             p.writeValue(typeData, for: c, type: writeType)
         }
 
@@ -568,11 +584,12 @@ final class DunenBLEManager: NSObject, ObservableObject {
         }
 
         let mode = demoSelectedMode
+        let profile = activeProfile
         let maxSpeedForMode: Double = {
             switch mode {
-            case .eco: return 68
-            case .xc: return 102
-            case .sports: return 136
+            case .eco: return profile.theoreticalTopSpeedKmh * 0.5
+            case .xc: return profile.theoreticalTopSpeedKmh * 0.75
+            case .sports: return profile.theoreticalTopSpeedKmh
             case .reverse: return 6
             case .park: return 0
             }
@@ -583,13 +600,13 @@ final class DunenBLEManager: NSObject, ObservableObject {
         demoSpeedKmh += (targetSpeed - demoSpeedKmh) * smoothing
 
         let accelPulse = max(0, demoThrottle - demoBrake)
-        let rpmRaw = mode == .park ? 0 : Int(telemetry.speedKmh * 8000.0 / 136.0)
+        let rpmRaw = mode == .park ? 0 : Int(telemetry.speedKmh / max(kmhPerMotorRPM, 0.0001))
         let rpmLimitForMode: Int = {
             switch mode {
-            case .eco: return 4000
-            case .xc: return 6000
-            case .sports: return 8000
-            case .reverse: return 260
+            case .eco: return profile.ecoRPM
+            case .xc: return profile.xcRPM
+            case .sports: return profile.sportRPM
+            case .reverse: return profile.reverseRPM
             case .park: return 0
             }
         }()
@@ -597,10 +614,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
         let voltage = 78.8 - min(demoTick / 1400.0, 4.0) - accelPulse * 0.25
         let rawCurrent = mode == .park ? 0 : max(0, demoSpeedKmh / 1.25 + demoThrottle * 48 - demoBrake * 10)
         let modePowerCapKw: Double = {
+            let peak = profile.motorPeakW / 1000.0
             switch mode {
-            case .eco: return 4.2
-            case .xc: return 6.5
-            case .sports: return 10.0
+            case .eco: return peak * 0.42
+            case .xc: return peak * 0.65
+            case .sports: return peak
             case .reverse: return 1.8
             case .park: return 0.0
             }
@@ -799,7 +817,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
             let udcVoltage = iq16At(2)
             if udcVoltage >= 45 && udcVoltage <= 95 && telemetry.voltage == 0 {
                 telemetry.voltage = (udcVoltage * 100.0).rounded() / 100.0
-                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage)
+                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage, topVoltage: activeProfile.socTopVoltage)
                 telemetry.bmsSoc = telemetry.batteryPercent
                 appLogger.log("DECODE-LIVE", "voltage seed from Udc raw=\(String(format:"%.4f",udcVoltage)) → \(String(format:"%.2f",telemetry.voltage))V (seed only, OVkey takes over)")
             }
@@ -956,7 +974,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
             if vKey >= 45 && vKey <= 95 {
                 let prevV = telemetry.voltage
                 telemetry.voltage = (vKey * 10000.0).rounded() / 10000.0
-                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage)
+                telemetry.batteryPercent = liIonSoc20s(telemetry.voltage, topVoltage: activeProfile.socTopVoltage)
                 telemetry.bmsSoc = telemetry.batteryPercent
                 appLogger.log("DECODE-C", "voltage \(String(format:"%.4f",prevV))→\(String(format:"%.4f",telemetry.voltage))V soc=\(String(format:"%.0f",telemetry.batteryPercent))%")
             } else {
@@ -1078,7 +1096,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
         // Do NOT zero rpm/speed/leanAngle here — set by the decoder directly.
         telemetry.gForce = 0
-        telemetry.theoreticalTopSpeedKmh = 136.0
+        telemetry.theoreticalTopSpeedKmh = activeProfile.theoreticalTopSpeedKmh
 
         lastSpeedKmh = telemetry.speedKmh
         lastVoltage = telemetry.voltage
@@ -1198,6 +1216,9 @@ extension DunenBLEManager: @preconcurrency CBCentralManagerDelegate {
         isConnected = true
         isDemoMode = false
         connectedName = peripheral.name ?? "DUNEN"
+        telemetry.productModel = activeProfile.controllerTypeString
+        telemetry.controllerName = activeProfile.controllerShortName
+        telemetry.theoreticalTopSpeedKmh = activeProfile.theoreticalTopSpeedKmh
         connectionStatus = "Connected. Discovering services..."
         let connectSoundEnabled = settings?.startupSound ?? true
         Task { @MainActor in SoundManager.shared.playConnectSound(enabled: connectSoundEnabled) }
@@ -1319,15 +1340,17 @@ private func reg32s(_ regs: [Int], idx: Int) -> Double {
     return Double(raw)
 }
 
-/// Piecewise linear voltage→SOC for a 20s LG Li-ion pack (nominal 72V).
-/// Breakpoints calibrated to real LG cell discharge curve; 74V = ~49%.
-/// Full = 84V (4.2V×20) = 100%, empty = 60V (3.0V×20) = 0%.
-private func liIonSoc20s(_ voltage: Double) -> Double {
+/// Piecewise linear voltage→SOC for a 20s Li-ion pack (nominal 72V).
+/// AP8F pack charges to ~82V full (confirmed 82V=100%, 79.36V=77%, 74V=48%).
+/// TSE72 Pro pack charges to 84.0V full (4.20V/cell). The curve shape below
+/// 82V is shared; only the top anchor stretches to the profile's fullVoltage.
+/// Full = profile.fullVoltage = 100%, empty = 60V (3.0V×20) = 0%.
+private func liIonSoc20s(_ voltage: Double, topVoltage: Double = 82.0) -> Double {
     // (voltage, soc%) breakpoints calibrated to real bike BMS readings.
-    // User confirmed: 82V = 100% (fully charged), 79.36V = 77%, 74V = 48%.
-    // Top anchor is 82V not 84V — this pack charges to ~82V full.
-    let curve: [(v: Double, soc: Double)] = [
-        (82.0, 100.0),  // fully charged
+    // AP8F pack: 82V = 100% (fully charged), 79.36V = 77%, 74V = 48%.
+    // TSE72 Pro pack: same shape, top stretched to 84.0V (4.20V/cell).
+    var curve: [(v: Double, soc: Double)] = [
+        (82.0, 100.0),  // fully charged (AP8F anchor; replaced below if topVoltage > 82)
         (81.7,  98.5),
         (81.4,  97.0),
         (81.1,  95.0),
@@ -1369,6 +1392,11 @@ private func liIonSoc20s(_ voltage: Double) -> Double {
         (62.0,   1.0),
         (60.0,   0.0),
     ]
+    // Stretch top anchor for packs that charge past 82V (TSE72 Pro → 84.0V).
+    // Keeps the confirmed 79.36V/74V mid-curve identical, only remaps 82V..top.
+    if topVoltage > 82.0 {
+        curve[0] = (topVoltage, 100.0)
+    }
     if voltage >= curve[0].v { return 100.0 }
     if voltage <= curve[curve.count - 1].v { return 0.0 }
     for i in 0..<(curve.count - 1) {

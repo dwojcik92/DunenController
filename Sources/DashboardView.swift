@@ -151,7 +151,7 @@ struct HUDBlock: View {
                     }
 
                     ZStack {
-                        RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode)
+                        RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode, profile: settings.selectedVehicleModel.profile)
                             .frame(width: compact ? 205 : 225, height: compact ? 205 : 225)
 
                         VStack(spacing: 0) {
@@ -349,19 +349,16 @@ struct ModeBadge: View {
 struct RPMArc: View {
     let rpm: Int
     let mode: RideMode
+    /// Active vehicle profile drives RPM limits; defaults to AP8F reference.
+    var profile: ControllerProfile = .ap8f
 
     private let startTrim = 0.12
     private let totalTrim = 0.76
 
-    // Controller/software RPM limits
+    // Controller/software RPM limits (per profile: AP8F 4000/6000/8000,
+    // TSE72 Pro 4500/6500/8500).
     var modeLimitRPM: Double {
-        switch mode {
-        case .eco: return 4000
-        case .xc: return 6000
-        case .sports: return 8000
-        case .reverse: return 350
-        case .park: return 1000
-        }
+        Double(profile.rpmLimit(for: mode))
     }
 
     // Realistic road-speed goals per mode.
@@ -377,13 +374,14 @@ struct RPMArc: View {
     }
 
     // RPM that equals the realistic road-speed goal.
-    // Uses Aptum reference: 8000 RPM ≈ 136 km/h wheel-in-air/software top.
+    // Uses profile top: AP8F sportRPM ≈ 136 km/h, TSE72 Pro sportRPM ≈ 100 km/h.
     var realisticTopRPM: Double {
+        let ref = Double(profile.sportRPM) / max(profile.theoreticalTopSpeedKmh, 1.0)
         switch mode {
-        case .eco: return min(modeLimitRPM, realisticTopSpeedKmh * 8000.0 / 136.0)
-        case .xc: return min(modeLimitRPM, realisticTopSpeedKmh * 8000.0 / 136.0)
-        case .sports: return min(modeLimitRPM, realisticTopSpeedKmh * 8000.0 / 136.0)
-        case .reverse: return 300
+        case .eco: return min(modeLimitRPM, realisticTopSpeedKmh * ref)
+        case .xc: return min(modeLimitRPM, realisticTopSpeedKmh * ref)
+        case .sports: return min(modeLimitRPM, realisticTopSpeedKmh * ref)
+        case .reverse: return Double(profile.reverseRPM)
         case .park: return 1000
         }
     }
@@ -578,13 +576,14 @@ struct GraphPanel: View {
 
 struct BatteryHealthCard: View {
     @EnvironmentObject var ble: DunenBLEManager
+    @EnvironmentObject var settings: AppSettings
 
     var body: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Battery Health").font(.headline)
                 HStack {
-                    stat("Pack", "72V 38.4Ah")
+                    stat("Pack", String(format: "%.0fV %.1fAh", settings.selectedVehicleModel.profile.nominalVoltage, settings.selectedVehicleModel.profile.batteryAh))
                     stat("Percent", String(format: "%.0f%%", ble.telemetry.batteryPercent))
                     stat("Sag", String(format: "%.2fV", ble.telemetry.voltageSag))
                 }

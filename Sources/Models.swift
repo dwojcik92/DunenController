@@ -84,6 +84,7 @@ enum RideMode: String, CaseIterable, Codable, Identifiable {
 enum VehicleModel: String, CaseIterable, Identifiable, Codable {
     case standard   = "Standard"
     case highPower  = "High Power"
+    case tse72Pro   = "TSE72 Pro"
 
     var id: String { rawValue }
 
@@ -91,6 +92,7 @@ enum VehicleModel: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .standard:  return "8kW / 72V — standard configuration"
         case .highPower: return "10kW / 72V — high power configuration"
+        case .tse72Pro:  return "15kW peak / 72V40Ah — DEMCC2429 (OFD03)"
         }
     }
 
@@ -98,6 +100,16 @@ enum VehicleModel: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .standard:  return "bolt.circle"
         case .highPower: return "bolt.circle.fill"
+        case .tse72Pro:  return "flame.circle.fill"
+        }
+    }
+
+    /// Controller/bike profile backing this vehicle model.
+    var profile: ControllerProfile {
+        switch self {
+        case .standard:  return .ap8f
+        case .highPower: return .ap8f
+        case .tse72Pro:  return .tse72Pro
         }
     }
 }
@@ -240,6 +252,9 @@ struct Telemetry: Equatable {
     }
 
     // Aptum reference: Sports mode 8000 RPM ≈ 136 km/h.
+    // NOTE: per-profile conversion lives on ControllerProfile.kmhPerMotorRPM.
+    // These helpers keep the legacy AP8F reference for callers that don't
+    // have a profile handy; new code should use profile.rpmLimit + kmhPerMotorRPM.
     var sportsRPMToSpeedReferenceKmh: Double {
         Double(rpm) * 136.0 / 8000.0
     }

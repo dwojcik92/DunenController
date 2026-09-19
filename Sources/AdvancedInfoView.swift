@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AdvancedInfoView: View {
     @EnvironmentObject var ble: DunenBLEManager
+    @EnvironmentObject var settings: AppSettings
 
     private var estimatedWhPerKm: Double {
         let speed = max(ble.telemetry.speedKmh, 1.0)
@@ -16,8 +17,10 @@ struct AdvancedInfoView: View {
     }
 
     private var estimatedRangeKm: Double {
-        // 72V * 38.4Ah ≈ 2765Wh. Use 78% usable for realistic riding.
-        let usableWh = 72.0 * 38.4 * 0.78
+        // Pack energy from active profile (AP8F 72V38.4Ah ≈ 2765Wh,
+        // TSE72 Pro 72V40Ah = 2880Wh). Use 78% usable for realistic riding.
+        let profile = settings.selectedVehicleModel.profile
+        let usableWh = profile.nominalVoltage * profile.batteryAh * 0.78
         let remainingWh = usableWh * max(0.0, min(100.0, ble.telemetry.batteryPercent)) / 100.0
         return min(max(remainingWh / max(estimatedWhPerKm, 1.0), 0), 68)
     }
@@ -79,11 +82,11 @@ struct AdvancedInfoView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Chain Drive Setup")
                             .font(.headline)
-                        row("Battery", "72V 38.4Ah")
-                        row("Motor", "4000W / 8000W peak")
-                        row("Rear sprocket", "48T")
-                        row("Rear wheel", "18 inch")
-                        row("Front wheel", "19 inch")
+                        row("Battery", String(format: "%.0fV %.1fAh (%@)", settings.selectedVehicleModel.profile.nominalVoltage, settings.selectedVehicleModel.profile.batteryAh, settings.selectedVehicleModel.profile.controllerTypeString))
+                        row("Motor", String(format: "%.0fW / %.0fW peak", settings.selectedVehicleModel.profile.motorContinuousW, settings.selectedVehicleModel.profile.motorPeakW))
+                        row("Rear sprocket", String(format: "%.0fT", settings.selectedVehicleModel.profile.rearSprocketTeeth))
+                        row("Rear wheel", String(format: "%.0f inch", settings.selectedVehicleModel.profile.rearWheelInches))
+                        row("Front wheel", String(format: "%.0f inch", settings.selectedVehicleModel.profile.frontWheelInches))
                         row("Drive", "Chain")
                         Text("Wheel torque and top speed are estimates from speed/RPM and assumed gearing.")
                             .font(.caption)
