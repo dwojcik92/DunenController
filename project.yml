@@ -48,7 +48,7 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
         INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_UIRequiresFullScreen: NO
-        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: NO
         STRIP_SWIFT_SYMBOLS: YES
         ENABLE_BITCODE: NO
