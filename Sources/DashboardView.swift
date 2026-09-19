@@ -80,53 +80,46 @@ struct DashboardView: View {
 /// current and battery readable at a glance.
 struct LandscapeRideDashboard: View {
     @EnvironmentObject var ble: DunenBLEManager
-    @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var gps: GPSSpeedManager
     var fullscreenButton: (() -> Void)?
 
-    private var profile: ControllerProfile { settings.selectedVehicleModel.profile }
-    private var speed: Double {
-        settings.speedUnit == .kmh ? ble.telemetry.speedKmh : ble.telemetry.speedKmh * 0.621371
-    }
-    private var speedText: String {
-        ble.telemetry.mode == .park ? "P" : "\(Int(speed.rounded()))"
-    }
     private var hasDriveData: Bool { ble.isDemoMode || ble.liveFrameCount > 0 }
-    private var modeColor: Color {
-        switch ble.telemetry.mode {
-        case .eco: return .green
-        case .xc: return .cyan
-        case .sports: return .orange
-        case .reverse: return .purple
-        case .park: return .white
-        }
-    }
 
     var body: some View {
         HStack(spacing: 12) {
-            GlassCard(glow: true) {
-                ZStack {
-                    Circle().fill(modeColor.opacity(0.13)).blur(radius: 42)
-                    RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode, profile: profile)
-                        .frame(width: 220, height: 220)
-                    VStack(spacing: 0) {
-                        Text(speedText)
-                            .font(.system(size: ble.telemetry.mode == .park ? 94 : 82, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(ble.telemetry.mode == .sports ? .orange : .primary)
-                        Text(ble.telemetry.mode == .park ? "PARK" : settings.speedUnit.rawValue)
-                            .font(.caption.weight(.bold))
-                            .tracking(2)
-                            .foregroundStyle(.secondary)
-                        if ble.telemetry.rpm > 0 {
-                            Text("\(ble.telemetry.rpm) RPM")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(modeColor)
-                                .padding(.top, 3)
-                        }
+            ZStack(alignment: .bottomLeading) {
+                OSMMapView(
+                    currentLocation: gps.currentLocation,
+                    track: gps.trackCoordinates,
+                    followUser: gps.isRecordingRide
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 22))
+
+                HStack {
+                    if gps.isRecordingRide {
+                        Label("REC · \(String(format: "%.2f km", gps.recordedDistanceKm))", systemImage: "record.circle.fill")
+                            .font(.caption2.weight(.heavy))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Link(destination: URL(string: "https://www.openstreetmap.org/copyright")!) {
+                        Text("© OpenStreetMap")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.55))
+                            .clipShape(Capsule())
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(10)
             }
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.cyan.opacity(0.22)))
+            .shadow(color: .cyan.opacity(0.08), radius: 12)
             .frame(maxWidth: .infinity)
 
             VStack(spacing: 10) {
@@ -187,6 +180,7 @@ struct LandscapeRideDashboard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .onAppear { gps.start() }
     }
 
     private func landscapeMetric(value: String, unit: String, label: String, icon: String) -> some View {
