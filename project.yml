@@ -37,7 +37,16 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UISupportsDocumentBrowser: true
         CFBundleIconName: AppIcon
-        UIRequiresFullScreen: false
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.crumies.AptumDashboard
@@ -47,7 +56,7 @@ targets:
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
         INFOPLIST_KEY_CFBundleIconName: AppIcon
-        INFOPLIST_KEY_UIRequiresFullScreen: NO
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: NO
         STRIP_SWIFT_SYMBOLS: YES

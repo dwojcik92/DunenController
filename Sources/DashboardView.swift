@@ -10,42 +10,48 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                header
-                HUDBlock(fullscreenButton: { fullscreen = true }, compact: false)
+        GeometryReader { geometry in
+            if geometry.size.width > geometry.size.height {
+                LandscapeRideDashboard(fullscreenButton: { fullscreen = true })
+            } else {
+                ScrollView {
+                    VStack(spacing: 14) {
+                        header
+                        HUDBlock(fullscreenButton: { fullscreen = true }, compact: false)
 
-                if settings.hudShowMetricsCard {
-                    MetricsCard(odo: odo)
-                }
+                        if settings.hudShowMetricsCard {
+                            MetricsCard(odo: odo)
+                        }
 
-                if settings.hudShowGraphs {
-                    GraphPanel(fullscreenButton: { fullscreen = true }, compact: false)
-                }
+                        if settings.hudShowGraphs {
+                            GraphPanel(fullscreenButton: { fullscreen = true }, compact: false)
+                        }
 
-                if settings.hudShowBatteryCard {
-                    BatteryHealthCard()
-                }
+                        if settings.hudShowBatteryCard {
+                            BatteryHealthCard()
+                        }
 
-                if settings.hudShowGPSSpeed {
-                    GPSSpeedCard()
-                }
+                        if settings.hudShowGPSSpeed {
+                            GPSSpeedCard()
+                        }
 
-                if settings.hudShowLeanCard {
-                    LeanCard()
-                }
+                        if settings.hudShowLeanCard {
+                            LeanCard()
+                        }
 
-                if settings.hudShowRideRecording {
-                    RideRecordingCard()
-                }
+                        if settings.hudShowRideRecording {
+                            RideRecordingCard()
+                        }
 
-                if settings.hudShowDiagnosticsCard {
-                    MiniDiagnosticsCard()
+                        if settings.hudShowDiagnosticsCard {
+                            MiniDiagnosticsCard()
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 10)
+                    .padding(.bottom, 82)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 10)
-            .padding(.bottom, 82)
         }
         .fullScreenCover(isPresented: $fullscreen) {
             FullscreenHUD()
@@ -64,6 +70,151 @@ struct DashboardView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Landscape automotive dashboard
+
+/// Purpose-built horizontal layout for a phone mounted on the handlebars.
+/// It avoids scaling the portrait stack and keeps the speedometer, power,
+/// current and battery readable at a glance.
+struct LandscapeRideDashboard: View {
+    @EnvironmentObject var ble: DunenBLEManager
+    @EnvironmentObject var settings: AppSettings
+    var fullscreenButton: (() -> Void)?
+
+    private var profile: ControllerProfile { settings.selectedVehicleModel.profile }
+    private var speed: Double {
+        settings.speedUnit == .kmh ? ble.telemetry.speedKmh : ble.telemetry.speedKmh * 0.621371
+    }
+    private var speedText: String {
+        ble.telemetry.mode == .park ? "P" : "\(Int(speed.rounded()))"
+    }
+    private var hasDriveData: Bool { ble.isDemoMode || ble.liveFrameCount > 0 }
+    private var modeColor: Color {
+        switch ble.telemetry.mode {
+        case .eco: return .green
+        case .xc: return .cyan
+        case .sports: return .orange
+        case .reverse: return .purple
+        case .park: return .white
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            GlassCard(glow: true) {
+                ZStack {
+                    Circle().fill(modeColor.opacity(0.13)).blur(radius: 42)
+                    RPMArc(rpm: ble.telemetry.rpm, mode: ble.telemetry.mode, profile: profile)
+                        .frame(width: 220, height: 220)
+                    VStack(spacing: 0) {
+                        Text(speedText)
+                            .font(.system(size: ble.telemetry.mode == .park ? 94 : 82, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(ble.telemetry.mode == .sports ? .orange : .primary)
+                        Text(ble.telemetry.mode == .park ? "PARK" : settings.speedUnit.rawValue)
+                            .font(.caption.weight(.bold))
+                            .tracking(2)
+                            .foregroundStyle(.secondary)
+                        if ble.telemetry.rpm > 0 {
+                            Text("\(ble.telemetry.rpm) RPM")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(modeColor)
+                                .padding(.top, 3)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 10) {
+                GlassCard {
+                    HStack {
+                        ModeBadge(mode: ble.telemetry.mode)
+                        Spacer()
+                        Circle()
+                            .fill(ble.isConnected ? Color.green : (ble.isDemoMode ? .orange : .secondary))
+                            .frame(width: 7, height: 7)
+                        Text(ble.isConnected ? "LIVE" : (ble.isDemoMode ? "DEMO" : "OFFLINE"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    landscapeMetric(
+                        value: hasDriveData ? String(format: "%.1f", ble.telemetry.powerKw) : "—",
+                        unit: "kW", label: "POWER", icon: "bolt.fill"
+                    )
+                    landscapeMetric(
+                        value: hasDriveData ? String(format: "%.0f", ble.telemetry.currentA) : "—",
+                        unit: "A", label: "MOTOR CURRENT", icon: "waveform.path.ecg"
+                    )
+                }
+
+                GlassCard {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Label(String(format: "%.0f%%", ble.telemetry.batteryPercent), systemImage: "battery.75percent")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.green)
+                            Spacer()
+                            Text(String(format: "%.1f V", ble.telemetry.voltage))
+                                .font(.headline.monospacedDigit())
+                        }
+                        Divider().opacity(0.25)
+                        HStack {
+                            status("CTRL", temperature(ble.telemetry.controllerTemp), "cpu")
+                            Spacer()
+                            status("MOTOR", temperature(ble.telemetry.motorTemp), "gearshape.2")
+                            Spacer()
+                            status("REGEN", ble.telemetry.regenLevel > 0 ? "L\(ble.telemetry.regenLevel)" : "AUTO", "arrow.triangle.2.circlepath")
+                            if let fullscreenButton {
+                                Spacer()
+                                Button(action: fullscreenButton) {
+                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.cyan)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func landscapeMetric(value: String, unit: String, label: String, icon: String) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 3) {
+                Image(systemName: icon).foregroundStyle(.cyan)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(value).font(.title.weight(.bold)).monospacedDigit()
+                    Text(unit).font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                }
+                Text(label).font(.system(size: 9, weight: .bold)).tracking(0.6).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func status(_ label: String, _ value: String, _ icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).foregroundStyle(.cyan)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.caption2.weight(.bold)).monospacedDigit()
+                Text(label).font(.system(size: 7, weight: .bold)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func temperature(_ value: Double) -> String {
+        value == 0 ? "—" : String(format: "%.0f°", value)
     }
 }
 
