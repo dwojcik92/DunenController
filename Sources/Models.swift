@@ -3,6 +3,7 @@ import SwiftUI
 
 enum AppTab: String, CaseIterable {
     case dashboard = "Dash"
+    case ride = "Ride"
     case advanced = "Info"
     case tuning = "Tuning"
     case diagnostics = "Diag"
@@ -11,6 +12,7 @@ enum AppTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .dashboard: return "gauge.with.dots.needle.bottom.50percent"
+        case .ride: return "map.fill"
         case .advanced: return "list.bullet.rectangle"
         case .tuning: return "slider.horizontal.3"
         case .diagnostics: return "waveform.path.ecg.rectangle"

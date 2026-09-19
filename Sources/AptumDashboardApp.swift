@@ -24,6 +24,10 @@ struct AptumDashboardApp: App {
                     SoundManager.shared.playStartupSound(enabled: settings.startupSound)
                     ble.attachTuningStore(tuning)
                     ble.attachSettings(settings)
+                    gps.attachTelemetryProvider(
+                        telemetry: { ble.telemetry },
+                        profile: { settings.selectedVehicleModel.profile }
+                    )
                     tuning.loadLocalBackup()
                     NotificationManager.shared.requestAuthorization()
                     // Cancel any pending ride reminders since the user just opened the app.

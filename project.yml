@@ -31,7 +31,11 @@ targets:
         CFBundleVersion: "115"
         UILaunchScreen: {}
         NSBluetoothAlwaysUsageDescription: This app uses Bluetooth to connect to the DUNEN e-bike controller.
-        NSLocationWhenInUseUsageDescription: This app uses GPS to show your real speed on the dashboard.
+        NSLocationWhenInUseUsageDescription: This app uses GPS to show your location, map your route, and record ride data.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Allow location access during a ride so the route and bike telemetry continue recording when the screen is locked or the app is in the background.
+        UIBackgroundModes:
+          - location
+          - bluetooth-central
         NSMotionUsageDescription: This app does not use phone motion sensors.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

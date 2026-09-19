@@ -24,6 +24,8 @@ struct RootView: View {
                             switch selectedTab {
                             case .dashboard:
                                 DashboardView()
+                            case .ride:
+                                RideMapView()
                             case .advanced:
                                 AdvancedInfoView()
                             case .tuning:

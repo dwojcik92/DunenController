@@ -850,18 +850,25 @@ struct MiniDiagnosticsCard: View {
 
 struct RideRecordingCard: View {
     @EnvironmentObject var ble: DunenBLEManager
+    @EnvironmentObject var gps: GPSSpeedManager
 
     var body: some View {
-        GlassCard(glow: ble.rideStats.isRecording) {
+                GlassCard(glow: gps.isRecordingRide) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("Ride Recording").font(.headline)
                     Spacer()
-                    Button(ble.rideStats.isRecording ? "Stop" : "Start") {
-                        ble.rideStats.isRecording ? ble.stopRideRecording() : ble.startRideRecording()
+                    Button(gps.isRecordingRide ? "Stop & Save" : "Start Ride") {
+                        if gps.isRecordingRide {
+                            gps.stopRide()
+                            ble.stopRideRecording()
+                        } else {
+                            ble.startRideRecording()
+                            gps.startRide()
+                        }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(ble.rideStats.isRecording ? .red : .cyan)
+                    .tint(gps.isRecordingRide ? .red : .cyan)
                 }
 
                 HStack {
