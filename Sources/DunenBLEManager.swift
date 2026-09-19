@@ -16,6 +16,9 @@ final class DunenBLEManager: NSObject, ObservableObject {
     @Published var isScanning = false
     @Published var isConnected = false
     @Published var isDemoMode = false
+    /// Allows the saved bike dashboard and layout editor to be used without
+    /// an active Bluetooth session.
+    @Published var isOfflineMode = false
     @Published var isInitializing = false   // true while connected but no telemetry yet
     @Published var connectedName: String?
     @Published var telemetry = Telemetry()
@@ -128,6 +131,7 @@ final class DunenBLEManager: NSObject, ObservableObject {
 
     func setDemoMode(_ enabled: Bool) {
         isDemoMode = enabled
+        isOfflineMode = false
         appLogger.log("APP", "Demo mode set to \(enabled)")
         if enabled {
             isConnected = false
@@ -147,7 +151,26 @@ final class DunenBLEManager: NSObject, ObservableObject {
         }
     }
 
+    func openOfflineDashboard() {
+        stopDemoTimer()
+        isDemoMode = false
+        isOfflineMode = true
+        telemetry = Telemetry()
+        let profile = activeProfile
+        telemetry.productModel = profile.controllerTypeString
+        telemetry.controllerName = profile.controllerShortName
+        telemetry.theoreticalTopSpeedKmh = profile.theoreticalTopSpeedKmh
+        connectedName = nil
+        connectionStatus = "Offline dashboard"
+    }
+
+    func showConnectionScreen() {
+        isOfflineMode = false
+        connectionStatus = central.state == .poweredOn ? "Bluetooth ready" : connectionStatus
+    }
+
     func startScan() {
+        isOfflineMode = false
         setDemoMode(false)
         guard central.state == .poweredOn else {
             connectionStatus = "Bluetooth is not powered on"
@@ -1266,7 +1289,6 @@ extension DunenBLEManager: @preconcurrency CBCentralManagerDelegate {
         if !discoveredDevices.contains(where: { $0.id == device.id }) {
             discoveredDevices.append(device)
         }
-        rememberDevice(id: device.id, name: device.name, rssi: device.rssi)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

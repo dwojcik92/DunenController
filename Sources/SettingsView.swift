@@ -72,10 +72,12 @@ struct SettingsView: View {
                         Toggle("Auto connect to remembered bike", isOn: $settings.autoConnect).tint(.cyan)
 
                         HStack {
-                            Button(ble.isScanning ? "Scanning..." : "Scan") { ble.startScan() }
+                            Button(ble.isConnected ? "Connected" : "Connect Bike") {
+                                ble.showConnectionScreen()
+                            }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.cyan)
-                                .disabled(ble.isScanning)
+                                .disabled(ble.isConnected)
 
                             Button(ble.isDemoMode ? "Stop Demo" : "Demo Mode") {
                                 ble.setDemoMode(!ble.isDemoMode)

@@ -125,7 +125,7 @@ struct HUDBlock: View {
         return "\(Int(speedValue.rounded()))"
     }
 
-    private var hasDriveTelemetry: Bool { ble.liveFrameCount > 0 }
+    private var hasDriveTelemetry: Bool { ble.isDemoMode || ble.liveFrameCount > 0 }
     private var powerText: String {
         hasDriveTelemetry ? String(format: "%.1f", ble.telemetry.powerKw) : "—"
     }

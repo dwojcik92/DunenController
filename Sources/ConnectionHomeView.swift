@@ -22,6 +22,15 @@ struct ConnectionHomeView: View {
                     .tint(.cyan)
                 }
 
+                Button {
+                    ble.openOfflineDashboard()
+                } label: {
+                    Label(ble.savedDevices.isEmpty ? "Open Dashboard" : "Open Saved Bike", systemImage: "speedometer")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.cyan)
+
                 Spacer(minLength: 8)
 
                 GlassCard(glow: true) {
@@ -74,9 +83,12 @@ struct ConnectionHomeView: View {
                                 HStack {
                                     Text(device.name)
                                     Spacer()
-                                    Text("seen").font(.caption).foregroundStyle(.secondary)
+                                    Text("Saved").font(.caption).foregroundStyle(.secondary)
                                 }
                             }
+                            Text("Your vehicle profile and dashboard layout are saved on this iPhone.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

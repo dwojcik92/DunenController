@@ -8,7 +8,7 @@ struct RootView: View {
     @State private var showSplash = true
 
     var showConnection: Bool {
-        !ble.isConnected && !ble.isDemoMode && !showSplash
+        !ble.isConnected && !ble.isDemoMode && !ble.isOfflineMode && !showSplash
     }
 
     var body: some View {
