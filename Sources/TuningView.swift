@@ -29,6 +29,7 @@ struct TuningView: View {
                     // ── Vehicle Model — always visible, no lock required ────────
                     VehicleModelCard()
 
+                    if settings.selectedVehicleModel.profile.supportsParameterWrites {
                     // ── Read / Backup controls ─────────────────────────────────
                     GlassCard(glow: tuning.didLoadFromController) {
                         VStack(alignment: .leading, spacing: 12) {
@@ -49,7 +50,25 @@ struct TuningView: View {
                             }
                         }
                     }
+                    } else {
+                        GlassCard(glow: true) {
+                            VStack(spacing: 12) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .font(.system(size: 34))
+                                    .foregroundStyle(.cyan)
+                                Text("Factory configuration protected")
+                                    .font(.headline)
+                                Text("Live dashboard and diagnostics are available. Controller changes are disabled because this bike uses a manufacturer-specific configuration.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                    }
 
+                    if settings.selectedVehicleModel.profile.supportsParameterWrites {
                     // ── Group picker ───────────────────────────────────────────
                     Picker("Group", selection: $selectedGroup) {
                         ForEach(TuningGroup.allCases, id: \.self) { g in
@@ -111,6 +130,7 @@ struct TuningView: View {
                             .disabled(!tuning.didLoadFromController || tuning.isWriting)
                             .padding(.top, 4)
                         }
+                    }
                     }
                 }
                 .padding(.horizontal, 18)

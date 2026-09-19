@@ -208,6 +208,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
     }
 
     func readCurrentSettings() {
+        guard activeProfile.supportsParameterWrites else {
+            tuningStore?.isReading = false
+            tuningStore?.statusText = "This bike uses a protected manufacturer configuration. Live data is available; controller tuning is read-only."
+            return
+        }
         guard let p = connectedPeripheral else {
             tuningStore?.statusText = "Not connected"
             return
@@ -257,6 +262,11 @@ final class DunenBLEManager: NSObject, ObservableObject {
     }
 
     func writeChangedSettings(_ params: [TuningParameter]) {
+        guard activeProfile.supportsParameterWrites else {
+            tuningStore?.isWriting = false
+            tuningStore?.statusText = "Writing is disabled for this bike's manufacturer configuration."
+            return
+        }
         guard let p = connectedPeripheral, let c = writeCharacteristic else {
             tuningStore?.statusText = "Not connected to writable FFF2 characteristic"
             return
@@ -687,6 +697,20 @@ final class DunenBLEManager: NSObject, ObservableObject {
         }
 
         let isModbusRead = data.count >= 3 && data[0] == 0x01 && data[1] == 0x03
+
+        // Controller identity response from the harmless FFEC/FFED/FFEE
+        // probes: byteCount 0x20 followed by a NUL-padded ASCII model name.
+        // Real TSE72 Pro capture: DEMCC2431QS06ZFS01. Decode it before generic
+        // response routing so Diagnostics shows the controller's own identity.
+        if isModbusRead, data.count >= 37, data[2] == 0x20 {
+            let end = min(data.count - 2, 35)
+            let bytes = data[3..<end].prefix { $0 != 0 }
+            if let model = String(bytes: bytes, encoding: .ascii), model.hasPrefix("DEMCC") {
+                telemetry.productModel = model
+                appLogger.log("CONTROLLER", "Reported model: \(model)")
+                return
+            }
+        }
 
         // Live frame pushed by controller via notify — just receive and decode it.
         if isDunenLivePrimaryFrame(data) {

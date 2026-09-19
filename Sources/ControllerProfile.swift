@@ -35,6 +35,10 @@ struct ControllerProfile: Equatable {
     let theoreticalTopSpeedKmh: Double
     let maxBatteryA: Double
     let maxPhaseA: Double
+    /// Whether this controller is known to use the public/default parameter
+    /// table. OEM tables must remain read-only even when one response happens
+    /// to have the expected byte count.
+    let supportsParameterWrites: Bool
     /// Top anchor actually observed at full charge (differs per pack/BMS).
     let socTopVoltage: Double
 
@@ -77,6 +81,7 @@ struct ControllerProfile: Equatable {
         theoreticalTopSpeedKmh: 136.0,
         maxBatteryA: 0, // unknown on AP8F — 0 = don't display
         maxPhaseA: 0,
+        supportsParameterWrites: true,
         socTopVoltage: 82.0
     )
 
@@ -84,8 +89,11 @@ struct ControllerProfile: Equatable {
         id: "tse72pro",
         displayName: "TSE72 Pro",
         detail: "15 kW peak · 72 V · 40 Ah",
-        controllerTypeString: "DEMCC2429QS06ZFS01",
-        alternateTypeString: "DEMCC2431QS06ZFS01",
+        // The physical label reads DEMCC2429, but the controller itself and
+        // official app both report DEMCC2431. Use the reported identity for
+        // the BLE protocol; retain the nameplate value as an alternate.
+        controllerTypeString: "DEMCC2431QS06ZFS01",
+        alternateTypeString: "DEMCC2429QS06ZFS01",
         controllerShortName: "DUNEN-C24",
         ecoRPM: 4500,
         xcRPM: 6500,
@@ -104,6 +112,7 @@ struct ControllerProfile: Equatable {
         theoreticalTopSpeedKmh: 100.0,
         maxBatteryA: 200,
         maxPhaseA: 530,
+        supportsParameterWrites: false,
         socTopVoltage: 84.0
     )
 
